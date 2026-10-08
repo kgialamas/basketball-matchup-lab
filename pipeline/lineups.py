@@ -41,7 +41,13 @@ def event_elapsed_seconds(event: dict[str, Any]) -> int:
     return previous + (period_len - _remaining_seconds(event.get("MARKERTIME"), period))
 
 
-def reconstruct_eurocup_stints(events: list[dict[str, Any]], starters: list[str], aris_code: str = "ARI") -> list[Stint]:
+def reconstruct_eurocup_stints(
+    events: list[dict[str, Any]],
+    starters: list[str],
+    *,
+    aris_is_team_a: bool,
+    aris_code: str = "ARI",
+) -> list[Stint]:
     lineup = {normalize_name(x) for x in starters}
     if len(lineup) != 5:
         raise ValueError("Starter normalization did not yield exactly five players")
@@ -76,21 +82,21 @@ def reconstruct_eurocup_stints(events: list[dict[str, Any]], starters: list[str]
             if a is not None or b is not None:
                 a = int(a or 0)
                 b = int(b or 0)
-                if str(e.get("CODETEAM", "")).strip().upper() == aris_code:
-                    pass
-                score_aris, score_opp = (a, b) if any(str(x.get("CODETEAM", "")).strip().upper() == aris_code and x.get("POINTS_A") is not None for x in ordered[: min(i, len(ordered))]) else (b, a)
+                score_aris, score_opp = (a, b) if aris_is_team_a else (b, a)
 
-        subs = [e for e in same_time if str(e.get("CODETEAM", "")).strip().upper() == aris_code and e.get("PLAYTYPE") in {"IN", "OUT"}]
+        subs = [
+            e for e in same_time
+            if str(e.get("CODETEAM", "")).strip().upper() == aris_code
+            and e.get("PLAYTYPE") in {"IN", "OUT"}
+        ]
         if subs:
             close(t)
             for e in subs:
-                name = normalize_name(e.get("PLAYER"))
                 if e.get("PLAYTYPE") == "OUT":
-                    lineup.discard(name)
+                    lineup.discard(normalize_name(e.get("PLAYER")))
             for e in subs:
-                name = normalize_name(e.get("PLAYER"))
                 if e.get("PLAYTYPE") == "IN":
-                    lineup.add(name)
+                    lineup.add(normalize_name(e.get("PLAYER")))
             if len(lineup) != 5:
                 raise ValueError(f"Substitution group at {t}s produced {len(lineup)} players: {sorted(lineup)}")
 
