@@ -1,0 +1,42 @@
+name: GBL Backfill
+
+on:
+  push:
+    paths:
+      - '.github/workflows/gbl-backfill.yml'
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Sync current GBL from official ESAKE results
+        run: python -m scripts.sync_gbl --season G2026
+      - name: Summarize GBL database
+        run: |
+          mkdir -p gbl_output
+          python - <<'PY'
+          import sqlite3
+          import pandas as pd
+          from pathlib import Path
+          db=Path('db/basketball.db')
+          with sqlite3.connect(db) as conn:
+              games=pd.read_sql_query("select game_code,home_team_name,away_team_name,home_score,away_score from games where season_code='G2026'",conn)
+              teams=pd.read_sql_query("select * from team_games where season_code='G2026'",conn)
+              players=pd.read_sql_query("select * from player_games where season_code='G2026'",conn)
+          print('GBL_GAMES',len(games))
+          print(games.to_string(index=False))
+          print('GBL_TEAM_ROWS',len(teams),'GBL_PLAYER_ROWS',len(players))
+          games.to_csv('gbl_output/games.csv',index=False)
+          teams.to_csv('gbl_output/team_games.csv',index=False)
+          players.to_csv('gbl_output/player_games.csv',index=False)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gbl-current-season
+          path: gbl_output/
