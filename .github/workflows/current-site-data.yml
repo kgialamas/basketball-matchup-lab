@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -56,5 +58,6 @@ jobs:
             echo "No site data changes"
           else
             git commit -m "Refresh current basketball site data"
-            git push
+            git pull --rebase origin main
+            git push origin HEAD:main
           fi
