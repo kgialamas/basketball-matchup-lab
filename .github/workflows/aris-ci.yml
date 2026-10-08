@@ -1,0 +1,33 @@
+name: ARIS pipeline CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  aris-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Compile
+        run: python -m compileall analytics pipeline sources scripts
+      - name: EuroCup lineup smoke test
+        run: python -m scripts.sync_aris --season U2026 --no-gbl --output /tmp/aris.json
+      - name: GBL known-game smoke test
+        run: |
+          python - <<'PY'
+          from sources.gbl import parse_game
+          from pipeline.lineups import reconstruct_gbl_stints, validate_stints
+          g = parse_game('A7698911')
+          stints = reconstruct_gbl_stints(g)
+          aris_score = g['score_a'] if g['aris_index'] == 0 else g['score_b']
+          opp_score = g['score_b'] if g['aris_index'] == 0 else g['score_a']
+          result = validate_stints(stints, aris_score - opp_score)
+          assert result['ok'], result
+          assert result['seconds'] == 2400, result
+          print(result)
+          PY
