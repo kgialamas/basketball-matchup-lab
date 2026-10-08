@@ -1,59 +1,87 @@
-const sample = {
-  competition: 'EuroCup', season: '2026-27',
-  teams: [
-    {name:'Aris Thessaloniki', code:'ARI', summary:{gp:2, pts:90.0, opp:77.0, reb:45.0, ast:22.0, fg2:'42/71', fg2pct:'59.2%', fg3:'19/64', fg3pct:'29.7%', ft:'39/49', ftpct:'79.6%', blk:4.0, fc:23.0, fd:25.0, tov:15.5, poss:78.8}, players:[
-      {name:'Jeremiah Robinson-Earl',pos:'F',min:'29:41',pts:12.0,reb:11.0,ast:2.5,fg3:'2/8'},
-      {name:'Matthew Morgan',pos:'G',min:'24:35',pts:10.0,reb:3.5,ast:3.5,fg3:'4/17'},
-      {name:'Neno Dimitrijevic',pos:'G',min:'22:13',pts:14.5,reb:3.0,ast:5.0,fg3:'2/5'},
-      {name:'Adam Mokoka',pos:'F',min:'22:11',pts:8.5,reb:2.0,ast:0.5,fg3:'1/9'},
-      {name:'Vassilis Toliopoulos',pos:'G',min:'18:20',pts:9.5,reb:2.5,ast:3.0,fg3:'5/13'}
-    ]},
-    {name:'Recoletas Salud San Pablo Burgos', code:'BUR', summary:{gp:2, pts:82.5, opp:87.0, reb:41.0, ast:19.5, fg2:'39/81', fg2pct:'48.1%', fg3:'20/50', fg3pct:'40.0%', ft:'27/43', ftpct:'62.8%', blk:3.0, fc:25.5, fd:22.5, tov:16.5, poss:74.5}, players:[
-      {name:'Sekou Doumbouya',pos:'C',min:'24:13',pts:14.5,reb:9.0,ast:3.0,fg3:'1/3'},
-      {name:'Chase Audige',pos:'G',min:'22:47',pts:17.5,reb:1.0,ast:1.5,fg3:'6/13'},
-      {name:'DJ Steward',pos:'G',min:'21:39',pts:17.5,reb:2.5,ast:3.0,fg3:'6/8'},
-      {name:'Ziga Samar',pos:'G',min:'21:37',pts:1.0,reb:3.5,ast:5.0,fg3:'0/0'},
-      {name:'Daniel Diez',pos:'F',min:'19:55',pts:5.5,reb:4.0,ast:1.5,fg3:'1/8'}
-    ]}
-  ]
-};
-
 const competition = document.querySelector('#competition');
 const season = document.querySelector('#season');
 const search = document.querySelector('#search');
 const results = document.querySelector('#results');
 const profile = document.querySelector('#profile');
 const tabs = [...document.querySelectorAll('.tab')];
+
+let dataset = null;
 let mode = 'team';
-competition.innerHTML = `<option>${sample.competition}</option>`;
-season.innerHTML = `<option>${sample.season}</option>`;
 
 function metric(label,val){return `<div class="metric"><span>${label}</span><strong>${val}</strong></div>`}
+function pctText(value){return `${Number(value || 0).toFixed(1)}%`}
+function currentSeason(){
+  if(!dataset) return null;
+  return dataset.seasons.find(s => s.competition === competition.value && s.season === season.value) || null;
+}
+function allPlayers(s){
+  if(!s) return [];
+  return s.teams.flatMap(t => t.players.map(p => ({...p, team:t.name, teamCode:t.code})));
+}
+function fillSeasonOptions(){
+  if(!dataset) return;
+  const comps=[...new Set(dataset.seasons.map(s=>s.competition))];
+  competition.innerHTML=comps.map(c=>`<option>${c}</option>`).join('');
+  if(comps.includes('EuroCup')) competition.value='EuroCup';
+  refreshSeasonOptions();
+}
+function refreshSeasonOptions(){
+  const seasons=dataset.seasons.filter(s=>s.competition===competition.value).map(s=>s.season);
+  season.innerHTML=[...new Set(seasons)].map(s=>`<option>${s}</option>`).join('');
+  renderResults();
+  const s=currentSeason();
+  if(s?.teams?.length){
+    const aris=s.teams.find(t=>t.name.toLowerCase().includes('aris'));
+    renderTeam(aris || s.teams[0]);
+  } else profile.innerHTML='';
+}
+
 function renderTeam(t){
  const s=t.summary;
- profile.innerHTML = `<div class="card"><div class="profile-head"><div><div class="eyebrow">${sample.competition} · ${sample.season}</div><h2>${t.name}</h2><p>Official-source sample · ${s.gp} games</p></div></div>
- <div class="metrics">${metric('PTS',s.pts.toFixed(1))}${metric('PTS Allowed',s.opp.toFixed(1))}${metric('REB',s.reb.toFixed(1))}${metric('AST',s.ast.toFixed(1))}${metric('Possessions',s.poss.toFixed(1))}</div>
- <h3>Shooting</h3><div class="shooting"><div><b>2FG</b><span>${s.fg2} — ${s.fg2pct}</span></div><div><b>3FG</b><span>${s.fg3} — ${s.fg3pct}</span></div><div><b>FT</b><span>${s.ft} — ${s.ftpct}</span></div></div>
- <h3>Roster — Season Averages</h3><div class="table-wrap"><table><thead><tr><th>Player</th><th>Pos</th><th>MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>3FG</th></tr></thead><tbody>${t.players.map(p=>`<tr data-player="${p.name}"><td>${p.name}</td><td>${p.pos}</td><td>${p.min}</td><td>${p.pts.toFixed(1)}</td><td>${p.reb.toFixed(1)}</td><td>${p.ast.toFixed(1)}</td><td>${p.fg3}</td></tr>`).join('')}</tbody></table></div></div>`;
+ profile.innerHTML = `<div class="card"><div class="profile-head"><div><div class="eyebrow">${currentSeason().competition} · ${currentSeason().season}</div><h2>${t.name}</h2><p>Official-source season data · ${s.gp} games</p></div></div>
+ <div class="metrics">${metric('PTS',s.pts.toFixed(1))}${metric('PTS Allowed',s.opp.toFixed(1))}${metric('REB',s.reb.toFixed(1))}${metric('AST',s.ast.toFixed(1))}${metric('PIR',s.pir.toFixed(1))}${metric('Poss.',s.poss.toFixed(1))}</div>
+ <h3>Shooting</h3><div class="shooting"><div><b>2FG</b><span>${s.fg2} — ${pctText(s.fg2pct)}</span></div><div><b>3FG</b><span>${s.fg3} — ${pctText(s.fg3pct)}</span></div><div><b>FT</b><span>${s.ft} — ${pctText(s.ftpct)}</span></div></div>
+ <h3>Roster — Season Statistics</h3><div class="table-wrap"><table><thead><tr><th>Player</th><th>Pos</th><th>GP</th><th>GS</th><th>MIN</th><th>PTS</th><th>2FG</th><th>3FG</th><th>FT</th><th>OREB</th><th>DREB</th><th>REB</th><th>AST</th><th>STL</th><th>TO</th><th>BLK</th><th>FC</th><th>FD</th><th>+/-</th><th>PIR</th></tr></thead><tbody>${t.players.map(p=>`<tr data-player="${p.code}"><td>${p.name}</td><td>${p.pos}</td><td>${p.gp}</td><td>${p.gs}</td><td>${p.min}</td><td>${p.pts.toFixed(1)}</td><td>${p.fg2} — ${pctText(p.fg2pct)}</td><td>${p.fg3} — ${pctText(p.fg3pct)}</td><td>${p.ft} — ${pctText(p.ftpct)}</td><td>${p.oreb.toFixed(1)}</td><td>${p.dreb.toFixed(1)}</td><td>${p.reb.toFixed(1)}</td><td>${p.ast.toFixed(1)}</td><td>${p.stl.toFixed(1)}</td><td>${p.tov.toFixed(1)}</td><td>${p.blk.toFixed(1)}</td><td>${p.fc.toFixed(1)}</td><td>${p.fd.toFixed(1)}</td><td>${p.plus_minus.toFixed(1)}</td><td>${p.pir.toFixed(1)}</td></tr>`).join('')}</tbody></table></div></div>`;
  document.querySelectorAll('[data-player]').forEach(r=>r.onclick=()=>renderPlayer(r.dataset.player));
 }
-function renderPlayer(name){
- const hit=sample.teams.flatMap(t=>t.players.map(p=>({...p,team:t.name}))).find(p=>p.name===name); if(!hit)return;
- profile.innerHTML=`<div class="card"><div class="eyebrow">PLAYER PROFILE · ${sample.competition} ${sample.season}</div><h2>${hit.name}</h2><p>${hit.team} · ${hit.pos}</p><div class="metrics">${metric('MIN',hit.min)}${metric('PTS',hit.pts.toFixed(1))}${metric('REB',hit.reb.toFixed(1))}${metric('AST',hit.ast.toFixed(1))}${metric('3FG',hit.fg3)}</div></div>`;
+
+function renderPlayer(code){
+ const s=currentSeason();
+ const hit=allPlayers(s).find(p=>p.code===code); if(!hit)return;
+ profile.innerHTML=`<div class="card"><div class="eyebrow">PLAYER PROFILE · ${s.competition} ${s.season}</div><h2>${hit.name}</h2><p>${hit.team} · ${hit.pos} · ${hit.gp} games</p><div class="metrics">${metric('MIN',hit.min)}${metric('PTS',hit.pts.toFixed(1))}${metric('REB',hit.reb.toFixed(1))}${metric('AST',hit.ast.toFixed(1))}${metric('STL',hit.stl.toFixed(1))}${metric('PIR',hit.pir.toFixed(1))}</div><h3>Shooting</h3><div class="shooting"><div><b>2FG</b><span>${hit.fg2} — ${pctText(hit.fg2pct)}</span></div><div><b>3FG</b><span>${hit.fg3} — ${pctText(hit.fg3pct)}</span></div><div><b>FT</b><span>${hit.ft} — ${pctText(hit.ftpct)}</span></div></div></div>`;
 }
+
 function renderResults(){
+ const s=currentSeason();
+ if(!s){results.innerHTML='';return;}
  const q=search.value.trim().toLowerCase();
  if(mode==='team'){
-  const hits=sample.teams.filter(t=>t.name.toLowerCase().includes(q));
-  results.innerHTML=hits.map(t=>`<button class="result" data-team="${t.code}"><b>${t.name}</b><span>${sample.competition} · ${sample.season}</span></button>`).join('');
-  document.querySelectorAll('[data-team]').forEach(b=>b.onclick=()=>renderTeam(sample.teams.find(t=>t.code===b.dataset.team)));
+  const hits=s.teams.filter(t=>t.name.toLowerCase().includes(q));
+  results.innerHTML=hits.map(t=>`<button class="result" data-team="${t.code}"><b>${t.name}</b><span>${s.competition} · ${s.season} · ${t.summary.gp} GP</span></button>`).join('');
+  document.querySelectorAll('[data-team]').forEach(b=>b.onclick=()=>renderTeam(s.teams.find(t=>t.code===b.dataset.team)));
  }else{
-  const players=sample.teams.flatMap(t=>t.players.map(p=>({...p,team:t.name}))).filter(p=>p.name.toLowerCase().includes(q));
-  results.innerHTML=players.map(p=>`<button class="result" data-p="${p.name}"><b>${p.name}</b><span>${p.team} · ${p.pos}</span></button>`).join('');
+  const players=allPlayers(s).filter(p=>p.name.toLowerCase().includes(q));
+  results.innerHTML=players.map(p=>`<button class="result" data-p="${p.code}"><b>${p.name}</b><span>${p.team} · ${p.pos}</span></button>`).join('');
   document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>renderPlayer(b.dataset.p));
  }
 }
+
 tabs.forEach(t=>t.onclick=()=>{tabs.forEach(x=>x.classList.remove('active'));t.classList.add('active');mode=t.dataset.mode;search.placeholder=mode==='team'?'Search team...':'Search player...';search.value='';profile.innerHTML='';renderResults();});
 search.addEventListener('input',renderResults);
-renderResults();
-renderTeam(sample.teams[0]);
+competition.addEventListener('change',refreshSeasonOptions);
+season.addEventListener('change',()=>{renderResults(); const s=currentSeason(); if(s?.teams?.length) renderTeam(s.teams[0]);});
+
+async function init(){
+  results.innerHTML='<div class="muted">Loading official-source dataset…</div>';
+  try{
+    const response=await fetch(`data/site-data.json?v=${Date.now()}`);
+    if(!response.ok) throw new Error(`HTTP ${response.status}`);
+    dataset=await response.json();
+    fillSeasonOptions();
+  }catch(err){
+    results.innerHTML='<div class="muted">Dataset refresh is still running. Please reload in a few minutes.</div>';
+    console.error(err);
+  }
+}
+
+init();
