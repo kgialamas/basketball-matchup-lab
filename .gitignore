@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+db/basketball.db
+.streamlit/secrets.toml
