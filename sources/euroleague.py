@@ -1,17 +1,43 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import requests
 
 BASE = "https://api-live.euroleague.net/v2"
+REQUEST_DELAY_SECONDS = 0.4
+MAX_RETRIES = 8
 
 
 def _get_json(url: str) -> dict[str, Any]:
-    r = requests.get(url, headers={"accept": "application/json"}, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        time.sleep(REQUEST_DELAY_SECONDS)
+        try:
+            r = requests.get(url, headers={"accept": "application/json"}, timeout=30)
+            if r.status_code == 429:
+                retry_after = r.headers.get("Retry-After")
+                try:
+                    delay = float(retry_after) if retry_after else min(2 ** attempt, 30)
+                except ValueError:
+                    delay = min(2 ** attempt, 30)
+                print(f"Rate limited by EuroLeague API; retrying in {delay:.1f}s: {url}")
+                time.sleep(delay)
+                continue
+            r.raise_for_status()
+            return r.json()
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == MAX_RETRIES - 1:
+                raise
+            delay = min(2 ** attempt, 30)
+            print(f"EuroLeague API request failed; retrying in {delay:.1f}s: {exc}")
+            time.sleep(delay)
+    if last_error:
+        raise last_error
+    raise RuntimeError(f"Failed to fetch {url}")
 
 
 def season_games(competition_code: str, season_code: str) -> list[dict[str, Any]]:
@@ -70,7 +96,6 @@ def normalize(header: dict[str, Any], stats: dict[str, Any]) -> tuple[dict[str, 
 
     for home_away, side_key, opp_key in (("home", "local", "road"), ("away", "road", "local")):
         side = stats.get(side_key, {})
-        opp = stats.get(opp_key, {})
         team = header.get(side_key, {}).get("club", {})
         opponent = header.get(opp_key, {}).get("club", {})
         ts = side.get("total", {}).get("stats") or side.get("total") or {}
