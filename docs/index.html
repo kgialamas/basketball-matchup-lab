@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Basketball Matchup Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">OFFICIAL-SOURCE BASKETBALL RESEARCH</p>
+      <h1>Basketball Matchup Lab</h1>
+      <p class="sub">Search current and historical team / player data. Projections come later.</p>
+    </header>
+
+    <section class="toolbar">
+      <div class="tabs">
+        <button class="tab active" data-mode="team">Team Search</button>
+        <button class="tab" data-mode="player">Player Search</button>
+      </div>
+      <div class="filters">
+        <select id="competition"></select>
+        <select id="season"></select>
+        <input id="search" type="search" placeholder="Search team..." />
+      </div>
+    </section>
+
+    <section id="results" class="results"></section>
+    <section id="profile"></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
