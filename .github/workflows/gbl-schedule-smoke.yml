@@ -1,0 +1,30 @@
+name: GBL Schedule Smoke
+
+on:
+  push:
+    paths:
+      - 'sources/gbl_schedule.py'
+      - 'scripts/sync_gbl_schedule.py'
+      - '.github/workflows/gbl-schedule-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  gbl-schedule:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Sync Aris GBL schedule
+        run: python -m scripts.sync_gbl_schedule --team-id 00000005 --season G2026
+      - name: Validate Aris vs AEK upcoming
+        run: |
+          python - <<'PY'
+          from analytics.schedule import list_upcoming_games
+          df = list_upcoming_games(season_code='G2026')
+          print(df[['game_date','matchup']].to_string(index=False))
+          assert len(df) > 0
+          assert any(('ΑΡΗΣ' in m.upper() or 'ARIS' in m.upper()) and ('ΑΕΚ' in m.upper() or 'AEK' in m.upper()) for m in df['matchup'])
+          PY
