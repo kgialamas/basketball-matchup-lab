@@ -1,0 +1,32 @@
+name: Schedule Smoke
+
+on:
+  push:
+    paths:
+      - 'scripts/sync_schedule.py'
+      - 'analytics/schedule.py'
+      - 'app.py'
+      - '.github/workflows/schedule-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  schedule:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Sync EuroLeague and EuroCup schedules
+        run: python -m scripts.sync_schedule --season E2026 --season U2026
+      - name: Validate upcoming games
+        run: |
+          python - <<'PY'
+          from analytics.schedule import list_upcoming_games
+          for season in ['E2026','U2026']:
+              df = list_upcoming_games(season_code=season)
+              print(season, 'UPCOMING', len(df))
+              print(df[['competition','game_date','matchup']].head(10).to_string(index=False))
+              assert len(df) > 0
+          PY
