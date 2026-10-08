@@ -5,11 +5,13 @@ on:
   push:
     paths:
       - '.github/workflows/historical-backfill.yml'
+      - 'sources/euroleague.py'
+      - 'scripts/sync.py'
 
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
