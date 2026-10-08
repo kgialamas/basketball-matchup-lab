@@ -44,7 +44,7 @@ def sync_season(season_code: str, max_games: int | None = None) -> dict:
     if max_games:
         games = games[-max_games:]
 
-    totals = {"games": 0, "team_rows": 0, "player_rows": 0, "errors": []}
+    totals = {"season": season_code, "games": 0, "team_rows": 0, "player_rows": 0, "errors": []}
     conn = connect()
     try:
         for item in games:
@@ -64,19 +64,27 @@ def sync_season(season_code: str, max_games: int | None = None) -> dict:
             except Exception as exc:
                 conn.rollback()
                 totals["errors"].append({"game_code": code, "error": str(exc)})
-                print(f"ERROR game {code}: {exc}")
+                print(f"ERROR {season_code} game {code}: {exc}")
     finally:
         conn.close()
     return totals
 
 
+def sync_many(seasons: list[str], max_games: int | None = None) -> list[dict]:
+    results = []
+    for season in seasons:
+        results.append(sync_season(season.upper(), max_games))
+    return results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sync EuroLeague/EuroCup season data into SQLite")
-    parser.add_argument("--season", default="U2026", help="Season code, e.g. U2026 or E2026")
+    parser.add_argument("--season", action="append", dest="seasons", help="Season code; repeat flag for multiple seasons, e.g. --season U2026 --season U2025")
     parser.add_argument("--max-games", type=int, default=None)
     args = parser.parse_args()
-    result = sync_season(args.season.upper(), args.max_games)
-    print(result)
+    seasons = [s.upper() for s in (args.seasons or ["U2026"])]
+    for result in sync_many(seasons, args.max_games):
+        print(result)
 
 
 if __name__ == "__main__":
