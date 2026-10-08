@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
+from analytics.lineups import summarize
 from pipeline.lineups import reconstruct_eurocup_stints, reconstruct_gbl_stints, validate_stints
 from sources.eurocup_pbp import aris_box, fetch_game, starters
 from sources.euroleague import game, season_games
@@ -126,11 +126,11 @@ def build_snapshot(season_code: str = "U2026", include_gbl: bool = True) -> dict
         competitions.append("GBL")
     games.sort(key=lambda x: (x.get("game_date") or "9999", str(x.get("game_code"))))
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
         "team": "ARIS Thessaloniki",
         "season": "2026-27",
         "competitions": competitions,
         "games": games,
+        "analytics": summarize(games),
         "errors": errors,
     }
 
@@ -145,7 +145,7 @@ def main() -> None:
     snapshot = build_snapshot(args.season.upper(), include_gbl=not args.no_gbl)
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps({
         "games": len(snapshot["games"]),
         "errors": len(snapshot["errors"]),
