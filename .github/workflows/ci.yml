@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile Python
+        run: python -m compileall app.py analytics sources scripts
+      - name: Sync two EuroCup games
+        run: python -m scripts.sync --season U2026 --max-games 2
+      - name: Validate normalized database
+        run: |
+          python - <<'PY'
+          import sqlite3
+          from analytics.matchup import list_teams
+          conn = sqlite3.connect('db/basketball.db')
+          games = conn.execute('select count(*) from games').fetchone()[0]
+          teams = conn.execute('select count(*) from team_games').fetchone()[0]
+          players = conn.execute('select count(*) from player_games').fetchone()[0]
+          conn.close()
+          assert games == 2, games
+          assert teams == 4, teams
+          assert players > 0, players
+          assert len(list_teams('U2026')) >= 2
+          print({'games': games, 'team_rows': teams, 'player_rows': players})
+          PY
