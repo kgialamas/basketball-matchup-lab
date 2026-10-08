@@ -1,0 +1,31 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m py_compile app.py analytics/matchup.py scripts/sync.py sources/euroleague.py
+      - run: python -m scripts.sync --season U2026 --max-games 2
+      - run: |
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          db = Path('db/basketball.db')
+          assert db.exists(), 'database was not created'
+          with sqlite3.connect(db) as conn:
+              games = conn.execute('select count(*) from games').fetchone()[0]
+              teams = conn.execute('select count(*) from team_games').fetchone()[0]
+              players = conn.execute('select count(*) from player_games').fetchone()[0]
+          assert games > 0 and teams > 0 and players > 0
+          print({'games': games, 'team_rows': teams, 'player_rows': players})
+          PY
