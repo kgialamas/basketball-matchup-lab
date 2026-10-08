@@ -1,163 +1,221 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import streamlit as st
 
-from analytics.matchup import build_matchup, list_seasons, list_teams
-from analytics.schedule import list_upcoming_games
+from analytics.matchup import (
+    build_matchup,
+    build_player_profile,
+    build_team_profile,
+    list_players,
+    list_seasons,
+    list_teams,
+)
 
 st.set_page_config(page_title="Basketball Matchup Lab", layout="wide")
 st.title("Basketball Matchup Lab")
-st.caption("Upcoming games, team profiles, player production, opponent allowed and pace — all in one place.")
+st.caption("Official-source basketball research. Search by team or player first; matchup analysis comes second.")
+
+
+def fmt_minutes(value) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "—"
+    total_seconds = int(round(float(value) * 60))
+    minutes, seconds = divmod(total_seconds, 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def fmt_num(value, digits=1):
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "—"
+    return f"{float(value):.{digits}f}"
+
+
+def shot_pair(made, attempted):
+    if made is None or attempted is None:
+        return "—"
+    return f"{float(made):.1f}-{float(attempted):.1f}"
+
+
+def roster_table(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    rows = []
+    for _, r in df.iterrows():
+        rows.append({
+            "Player": r.get("player_name"),
+            "Pos": r.get("position_name") or "—",
+            "GP": int(r.get("games", 0)),
+            "GS": int(r.get("starts", 0) or 0),
+            "MIN": fmt_minutes(r.get("minutes")),
+            "PTS": fmt_num(r.get("points")),
+            "2FG": shot_pair(r.get("fg2m"), r.get("fg2a")),
+            "3FG": shot_pair(r.get("fg3m"), r.get("fg3a")),
+            "FT": shot_pair(r.get("ftm"), r.get("fta")),
+            "OREB": fmt_num(r.get("offensive_rebounds")),
+            "DREB": fmt_num(r.get("defensive_rebounds")),
+            "REB": fmt_num(r.get("rebounds")),
+            "AST": fmt_num(r.get("assists")),
+            "STL": fmt_num(r.get("steals")),
+            "TO": fmt_num(r.get("turnovers")),
+            "BLK": fmt_num(r.get("blocks")),
+            "FC": fmt_num(r.get("fouls_committed")),
+            "FD": fmt_num(r.get("fouls_received")),
+            "+/-": fmt_num(r.get("plus_minus")),
+            "PIR": fmt_num(r.get("valuation")),
+        })
+    return pd.DataFrame(rows)
+
+
+def team_stats_table(avg: dict, total: dict) -> pd.DataFrame:
+    metrics = [
+        ("Points", "points"),
+        ("Points Allowed", "opponent_points"),
+        ("2FG Made", "fg2m"), ("2FG Attempted", "fg2a"),
+        ("3FG Made", "fg3m"), ("3FG Attempted", "fg3a"),
+        ("FT Made", "ftm"), ("FT Attempted", "fta"),
+        ("Offensive Rebounds", "offensive_rebounds"),
+        ("Defensive Rebounds", "defensive_rebounds"),
+        ("Rebounds", "rebounds"),
+        ("Assists", "assists"),
+        ("Steals", "steals"),
+        ("Turnovers", "turnovers"),
+        ("Blocks", "blocks"),
+        ("Fouls Committed", "fouls_committed"),
+        ("Fouls Drawn", "fouls_received"),
+        ("PIR", "valuation"),
+        ("Estimated Possessions", "possessions_est"),
+    ]
+    return pd.DataFrame([
+        {"Metric": label, "Per Game": fmt_num(avg.get(key)), "Season Total": fmt_num(total.get(key), 0)}
+        for label, key in metrics
+    ])
+
 
 seasons = list_seasons()
 if seasons.empty:
     st.warning("No data available yet. Run the season sync first.")
     st.stop()
 
-season_options = seasons["season_code"].tolist()
-season_code = st.sidebar.selectbox("Season", season_options)
+season_code = st.sidebar.selectbox("Season", seasons["season_code"].tolist())
 filter_mode = st.sidebar.selectbox("Sample", ["All games", "Last 5", "Last 10", "Home", "Away"])
-mode = st.sidebar.radio("Mode", ["Upcoming Games", "Manual Matchup"])
+search_mode = st.radio("Search", ["Team", "Player", "Matchup"], horizontal=True)
 
-selected_a = None
-selected_b = None
+if search_mode == "Team":
+    teams = list_teams(season_code)
+    if teams.empty:
+        st.info("No team data is available for this season yet.")
+        st.stop()
 
-if mode == "Upcoming Games":
-    upcoming = list_upcoming_games(season_code=season_code)
-    st.subheader("Upcoming Games")
-    if upcoming.empty:
-        st.info("No upcoming games are stored for this season yet. Use Manual Matchup or run the schedule sync.")
-    else:
-        competition_options = ["All"] + sorted(upcoming["competition"].dropna().unique().tolist())
-        competition = st.selectbox("Competition", competition_options)
-        view = upcoming if competition == "All" else upcoming[upcoming["competition"] == competition]
-        labels = {
-            f"{r.matchup} · {r.game_date}": (r.home_team_code, r.away_team_code)
-            for _, r in view.iterrows()
-        }
-        chosen = st.selectbox("Game", list(labels.keys()))
-        selected_a, selected_b = labels[chosen]
-        if st.button("Open Matchup", type="primary", use_container_width=True):
-            st.session_state["selected_matchup"] = (selected_a, selected_b, season_code, filter_mode)
+    options = {f"{r.team_name} ({r.team_code})": r.team_code for _, r in teams.iterrows()}
+    selected_label = st.selectbox("Select Team", list(options.keys()))
+    profile = build_team_profile(options[selected_label], season_code, filter_mode)
+
+    st.divider()
+    st.header(profile["name"])
+    st.caption(f"{season_code} · {filter_mode} · {profile['averages']['games']} games")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("PPG", fmt_num(profile["averages"].get("points")))
+    c2.metric("Points Allowed", fmt_num(profile["averages"].get("opponent_points")))
+    c3.metric("Rebounds", fmt_num(profile["averages"].get("rebounds")))
+    c4.metric("Assists", fmt_num(profile["averages"].get("assists")))
+
+    roster_tab, team_tab, games_tab = st.tabs(["Roster & Player Stats", "Team Stats", "Game Log"])
+
+    with roster_tab:
+        st.subheader("Current Season Roster")
+        st.caption("Per-game averages from official box scores. Minutes are shown as MM:SS.")
+        st.dataframe(roster_table(profile["roster"]), use_container_width=True, hide_index=True)
+
+    with team_tab:
+        st.subheader("Team Statistics")
+        st.dataframe(team_stats_table(profile["averages"], profile["totals"]), use_container_width=True, hide_index=True)
+        st.write(f"Pace: **{profile['averages']['pace_label'].title()}**")
+
+    with games_tab:
+        cols = ["game_date", "home_away", "opponent_name", "points", "opponent_points", "rebounds", "assists", "turnovers", "possessions_est"]
+        frame = profile["games"][[c for c in cols if c in profile["games"].columns]].copy()
+        frame.columns = [c.replace("_", " ").title() for c in frame.columns]
+        st.dataframe(frame, use_container_width=True, hide_index=True)
+
+elif search_mode == "Player":
+    players = list_players(season_code)
+    if players.empty:
+        st.info("No player data is available for this season yet.")
+        st.stop()
+
+    options = {
+        f"{r.player_name} — {r.team_name}": r.player_code
+        for _, r in players.iterrows()
+    }
+    selected_label = st.selectbox("Select Player", list(options.keys()))
+    profile = build_player_profile(options[selected_label], season_code, filter_mode)
+    s = profile["summary"]
+
+    st.divider()
+    st.header(profile["player_name"])
+    st.caption(f"{profile['team_name']} · {profile['position_name'] or '—'} · {season_code} · {filter_mode}")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("MIN", fmt_minutes(s.get("minutes")))
+    c2.metric("PTS", fmt_num(s.get("points")))
+    c3.metric("REB", fmt_num(s.get("rebounds")))
+    c4.metric("AST", fmt_num(s.get("assists")))
+    c5.metric("PIR", fmt_num(s.get("valuation")))
+
+    st.subheader("Season Line")
+    st.dataframe(roster_table(pd.DataFrame([s])), use_container_width=True, hide_index=True)
+
+    st.subheader("Game Log")
+    game_cols = [
+        "game_date", "opponent_name", "home_away", "minutes", "points", "fg2m", "fg2a", "fg3m", "fg3a",
+        "ftm", "fta", "offensive_rebounds", "defensive_rebounds", "rebounds", "assists", "steals", "turnovers",
+        "blocks", "fouls_committed", "fouls_received", "plus_minus", "valuation",
+    ]
+    log = profile["game_log"][[c for c in game_cols if c in profile["game_log"].columns]].copy()
+    if "minutes" in log:
+        log["minutes"] = log["minutes"].map(fmt_minutes)
+    st.dataframe(log, use_container_width=True, hide_index=True)
+
 else:
-    st.subheader("Manual Matchup")
     teams = list_teams(season_code)
     team_options = {f"{r.team_name} ({r.team_code})": r.team_code for _, r in teams.iterrows()}
     labels = list(team_options.keys())
     if len(labels) < 2:
-        st.info("Not enough teams are available in this season yet.")
+        st.info("Not enough teams are available for a matchup yet.")
         st.stop()
+
     c1, c2 = st.columns(2)
     with c1:
         a_label = st.selectbox("Team A", labels, index=0)
     with c2:
         b_label = st.selectbox("Team B", labels, index=1)
-    selected_a, selected_b = team_options[a_label], team_options[b_label]
-    if selected_a == selected_b:
+
+    if a_label == b_label:
         st.info("Choose two different teams.")
         st.stop()
+
     if st.button("Build Matchup", type="primary", use_container_width=True):
-        st.session_state["selected_matchup"] = (selected_a, selected_b, season_code, filter_mode)
+        m = build_matchup(team_options[a_label], team_options[b_label], season_code, filter_mode)
+        st.session_state["matchup_result"] = m
 
-selection = st.session_state.get("selected_matchup")
-if not selection:
-    st.stop()
-team_a, team_b, selected_season, selected_filter = selection
-if selected_season != season_code or selected_filter != filter_mode:
-    st.stop()
+    m = st.session_state.get("matchup_result")
+    if not m or m["season_code"] != season_code or m["filter_mode"] != filter_mode:
+        st.stop()
 
-try:
-    m = build_matchup(team_a, team_b, season_code, filter_mode=filter_mode)
-except ValueError as exc:
-    st.warning(str(exc))
-    st.stop()
+    a, b = m["team_a"], m["team_b"]
+    st.divider()
+    st.header(f"{a['name']} vs {b['name']}")
+    st.caption(f"{season_code} · {filter_mode}")
 
-a, b = m["team_a"], m["team_b"]
-st.divider()
-st.header(f"{a['name']} vs {b['name']}")
-st.caption(f"{season_code} · {filter_mode} · League average estimated possessions: {m['league_pace']:.1f}")
-
-metric_labels = [
-    ("points", "PTS"), ("opponent_points", "PTS Allowed"), ("rebounds", "REB"),
-    ("assists", "AST"), ("fg2m", "2PM"), ("fg2a", "2PA"), ("fg3m", "3PM"),
-    ("fg3a", "3PA"), ("ftm", "FTM"), ("fta", "FTA"), ("blocks", "BLK"),
-    ("fouls_committed", "Fouls Committed"), ("fouls_received", "Fouls Drawn"),
-    ("turnovers", "TO"), ("possessions_est", "Estimated Possessions"),
-]
-summary_df = pd.DataFrame([
-    {"Metric": label, a["name"]: a["summary"].get(key), b["name"]: b["summary"].get(key)}
-    for key, label in metric_labels
-])
-
-allowed_labels = [
-    ("points", "PTS Allowed"), ("rebounds", "REB Allowed"), ("assists", "AST Allowed"),
-    ("fg2m", "2PM Allowed"), ("fg2a", "2PA Allowed"), ("fg3m", "3PM Allowed"),
-    ("fg3a", "3PA Allowed"), ("ftm", "FTM Allowed"), ("fta", "FTA Allowed"),
-    ("blocks", "BLK Allowed"), ("fouls_received", "Fouls Drawn Allowed"), ("turnovers", "TO Allowed"),
-]
-allowed_df = pd.DataFrame([
-    {"Metric": label, a["name"]: a["allowed"].get(key), b["name"]: b["allowed"].get(key)}
-    for key, label in allowed_labels
-])
-
-player_cols = [
-    "player_name", "position_name", "minutes", "points", "rebounds", "assists",
-    "fg2m", "fg2a", "fg3m", "fg3a", "ftm", "fta", "blocks",
-    "fouls_committed", "fouls_received", "turnovers",
-]
-
-ov, team_tab, players_tab, allowed_tab, position_tab, pace_tab = st.tabs([
-    "Overview", "Team Stats", "Players", "Opponent Allowed", "By Position", "Pace"
-])
-
-with ov:
-    c1, c2 = st.columns(2)
-    for col, team in [(c1, a), (c2, b)]:
-        with col:
-            pts = team["summary"].get("points")
-            st.metric(team["name"], f"{pts:.1f} PPG" if pts is not None else "—")
-            st.write(f"Pace: **{team['summary']['pace_label'].title()}**")
-            st.write(f"Sample size: **{team['summary']['games']} games**")
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
-
-with team_tab:
-    st.markdown("### Team Production")
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
-    st.markdown("### What Each Team Allows")
-    st.dataframe(allowed_df, use_container_width=True, hide_index=True)
-
-with players_tab:
-    p1, p2 = st.columns(2)
-    with p1:
-        st.markdown(f"### {a['name']}")
-        st.dataframe(a["players"][[c for c in player_cols if c in a["players"].columns]], use_container_width=True, hide_index=True)
-    with p2:
-        st.markdown(f"### {b['name']}")
-        st.dataframe(b["players"][[c for c in player_cols if c in b["players"].columns]], use_container_width=True, hide_index=True)
-
-with allowed_tab:
-    st.markdown(f"### Opponents vs {a['name']}")
-    st.dataframe(a["opponents"], use_container_width=True, hide_index=True)
-    st.markdown(f"### Opponents vs {b['name']}")
-    st.dataframe(b["opponents"], use_container_width=True, hide_index=True)
-
-with position_tab:
-    target = st.radio("Defense to Inspect", [a["name"], b["name"]], horizontal=True)
-    selected = a if target == a["name"] else b
-    groups = selected["opponents_by_position"]
-    if not groups:
-        st.info("No opponent position data is available for this sample yet.")
-    else:
-        group = st.selectbox("Position Group", list(groups.keys()))
-        st.caption(f"Opponent {group.lower()} vs {selected['name']} · {filter_mode}")
-        st.dataframe(groups[group], use_container_width=True, hide_index=True)
-
-with pace_tab:
-    pace_df = pd.DataFrame([
-        {"Team": a["name"], "Estimated Possessions": a["summary"].get("possessions_est"), "Pace": a["summary"]["pace_label"].title()},
-        {"Team": b["name"], "Estimated Possessions": b["summary"].get("possessions_est"), "Pace": b["summary"]["pace_label"].title()},
-        {"Team": "League Average", "Estimated Possessions": m["league_pace"], "Pace": "Reference"},
+    comparison = pd.DataFrame([
+        {"Metric": "Points", a["name"]: fmt_num(a["summary"].get("points")), b["name"]: fmt_num(b["summary"].get("points"))},
+        {"Metric": "Points Allowed", a["name"]: fmt_num(a["summary"].get("opponent_points")), b["name"]: fmt_num(b["summary"].get("opponent_points"))},
+        {"Metric": "Rebounds", a["name"]: fmt_num(a["summary"].get("rebounds")), b["name"]: fmt_num(b["summary"].get("rebounds"))},
+        {"Metric": "Assists", a["name"]: fmt_num(a["summary"].get("assists")), b["name"]: fmt_num(b["summary"].get("assists"))},
+        {"Metric": "Estimated Possessions", a["name"]: fmt_num(a["summary"].get("possessions_est")), b["name"]: fmt_num(b["summary"].get("possessions_est"))},
     ])
-    st.dataframe(pace_df, use_container_width=True, hide_index=True)
-    st.caption("Estimated possessions = FGA − OREB + TO + 0.44 × FTA. Shot-clock timing will be added from play-by-play where reliable.")
+    st.dataframe(comparison, use_container_width=True, hide_index=True)
