@@ -1,0 +1,48 @@
+name: Demo Matchup
+
+on:
+  push:
+    paths:
+      - '.github/workflows/demo.yml'
+  workflow_dispatch:
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Sync current EuroCup
+        run: python -m scripts.sync --season U2026 --max-games 40
+      - name: Build Aris vs Burgos demo
+        run: |
+          mkdir -p demo_output
+          python - <<'PY'
+          from analytics.matchup import build_matchup
+          import pandas as pd
+          m = build_matchup('ARI', 'BGS', 'U2026', 'All games')
+          a, b = m['team_a'], m['team_b']
+          rows = []
+          metrics = ['points','opponent_points','rebounds','assists','fg2m','fg2a','fg3m','fg3a','ftm','fta','blocks','fouls_committed','fouls_received','turnovers','possessions_est']
+          for metric in metrics:
+              rows.append({'metric': metric, a['name']: a['summary'].get(metric), b['name']: b['summary'].get(metric)})
+          summary = pd.DataFrame(rows)
+          summary.to_csv('demo_output/aris_vs_burgos_team_summary.csv', index=False)
+          a['players'].to_csv('demo_output/aris_players.csv', index=False)
+          b['players'].to_csv('demo_output/burgos_players.csv', index=False)
+          a['opponents'].to_csv('demo_output/opponents_vs_aris.csv', index=False)
+          b['opponents'].to_csv('demo_output/opponents_vs_burgos.csv', index=False)
+          print('MATCHUP_SUMMARY')
+          print(summary.to_string(index=False))
+          print('ARIS_TOP_PLAYERS')
+          print(a['players'][['player_name','position_name','minutes','points','rebounds','assists','fg3m','fg3a','fouls_received']].head(8).to_string(index=False))
+          print('BURGOS_TOP_PLAYERS')
+          print(b['players'][['player_name','position_name','minutes','points','rebounds','assists','fg3m','fg3a','fouls_received']].head(8).to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aris-burgos-demo
+          path: demo_output/
