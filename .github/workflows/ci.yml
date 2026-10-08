@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Compile Python
-        run: python -m compileall app.py analytics sources scripts
+        run: python -m compileall app.py analytics pipeline sources scripts
       - name: Sync two EuroCup games
         run: python -m scripts.sync --season U2026 --max-games 2
       - name: Validate normalized database
@@ -35,4 +35,20 @@ jobs:
           assert players > 0, players
           assert len(list_teams('U2026')) >= 2
           print({'games': games, 'team_rows': teams, 'player_rows': players})
+          PY
+      - name: Validate ARIS EuroCup lineup reconstruction
+        run: python -m scripts.sync_aris --season U2026 --no-gbl --output /tmp/aris.json
+      - name: Validate known GBL game parser
+        run: |
+          python - <<'PY'
+          from sources.gbl import parse_game
+          from pipeline.lineups import reconstruct_gbl_stints, validate_stints
+          g = parse_game('A7698911')
+          stints = reconstruct_gbl_stints(g)
+          aris_score = g['score_a'] if g['aris_index'] == 0 else g['score_b']
+          opp_score = g['score_b'] if g['aris_index'] == 0 else g['score_a']
+          result = validate_stints(stints, aris_score - opp_score)
+          assert result['ok'], result
+          assert result['seconds'] == 2400, result
+          print(result)
           PY
