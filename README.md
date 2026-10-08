@@ -2,7 +2,10 @@
 
 Personal basketball research toolkit for EuroLeague, EuroCup, Basketball Champions League and Greek GBL.
 
-Current milestone: EuroLeague/EuroCup ingestion, SQLite storage, pace/possessions analytics, matchup explorer, and a lightweight Streamlit interface.
+The repo now has two layers:
+
+1. The original general matchup toolkit (boxscores, team/player stats, pace estimates, Streamlit UI).
+2. A dedicated ARIS 2026-27 play-by-play pipeline that reconstructs five-man lineups and produces ON/OFF, pair and lineup analytics.
 
 ## Quick start
 
@@ -11,39 +14,60 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
+
+# General EuroCup/EuroLeague dataset
 python -m scripts.sync --season U2026
+
+# ARIS-only validated lineup dataset (EuroCup + GBL)
+python -m scripts.sync_aris --season U2026
+
+# Optional UI
 streamlit run app.py
 ```
 
-Use `E2026` for EuroLeague 2026-27 and `U2026` for EuroCup 2026-27.
+The ARIS snapshot is written to `data/aris_2026_27.json`.
 
-## Current V1 scope
+## ARIS pipeline
 
-- Game-by-game team and player stats
-- Points, rebounds, assists
-- 2PT, 3PT and FT makes/attempts
-- Blocks
-- Fouls committed / received
-- Turnovers, steals and minutes retained for future analysis
-- Estimated possessions: `FGA - OREB + TO + 0.44 * FTA`
-- Competition-relative fast / average / slow pace label
-- Matchup comparison between two teams
-- Player averages and opponent-allowed player tables
+### Sources
 
-## Architecture
+- EuroCup: official EuroLeague live JSON play-by-play + boxscore feeds.
+- GBL: ESAKE game pages, using the embedded Genius/BasketHotel play-by-play rows.
+
+### Validation gates
+
+A game is accepted only when the reconstructed data passes the checks available for that source, including:
+
+- exactly five ARIS players in every stint;
+- 40:00 regulation duration (plus overtime where applicable);
+- reconstructed scoring margin equals the official final margin;
+- substitution groups do not create impossible lineups;
+- starter inference must resolve cleanly.
+
+Bad/uncertain scrapes are rejected or listed under `errors`; they are not silently included in analytics.
+
+### Analytics generated
+
+- player ON vs OFF minutes and +/- per 40;
+- ON/OFF swing;
+- two-player shared-minute combinations;
+- five-man lineup performance;
+- points for / against per 40 as an interim pace-normalized view.
+
+Possession-level ORtg/DRtg and Four Factors are the next analytical layer; they should only be added once possession boundaries are reconstructed reliably from play-by-play.
+
+## Automation
+
+`.github/workflows/aris-refresh.yml` runs every day and can also be triggered manually from GitHub Actions. It rebuilds the season snapshot, validates it, and commits `data/aris_2026_27.json` only when the underlying dataset has actually changed.
+
+## Existing general architecture
 
 ```text
 sources/      source-specific ingestion adapters
+pipeline/     play-by-play normalization / lineup reconstruction
 scripts/      sync jobs
-analytics/    matchup and pace calculations
-db/           normalized SQLite schema
+analytics/    matchup, pace and lineup calculations
+data/         generated ARIS season snapshot
+db/           normalized SQLite schema for the general toolkit
 app.py        Streamlit UI
 ```
-
-SQLite is intentionally used for local development and validation. Before unattended online scheduled sync is enabled, the persistence layer should move to a hosted database (for example Postgres) so the Streamlit process is not responsible for durable storage.
-
-## Next adapters
-
-1. Basketball Champions League
-2. Greek GBL
-3. Play-by-play enrichment for possession timing where the source quality supports it
