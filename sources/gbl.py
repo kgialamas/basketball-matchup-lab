@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
@@ -18,7 +17,10 @@ COMPETITION = "GBL"
 def _get(url: str) -> tuple[str, BeautifulSoup]:
     r = requests.get(url, timeout=30, headers=HEADERS)
     r.raise_for_status()
-    return r.text, BeautifulSoup(r.text, "html.parser")
+    # ESAKE serves UTF-8 content but its headers can cause requests to guess latin-1,
+    # producing mojibake for Greek team names. Decode the response bytes explicitly.
+    text = r.content.decode("utf-8", errors="replace")
+    return text, BeautifulSoup(text, "html.parser")
 
 
 def _query_id(href: str, key: str) -> str | None:
@@ -125,12 +127,10 @@ def _participating_teams(soup: BeautifulSoup) -> list[tuple[str, str]]:
 
 def _score_and_names(soup: BeautifulSoup, teams: list[tuple[str, str]]) -> tuple[str, str, float | None, float | None]:
     text = " ".join(soup.stripped_strings)
-    # Official pages often expose a compact `Game: TEAM 74 - 68 TEAM` label.
     m = re.search(r"Game:\s*(.+?)\s+(\d+)\s*-\s*(\d+)\s+(.+?)(?:\s+PLAYER|\s+SHOTS|$)", text, flags=re.I)
     if m:
         return m.group(1).strip(), m.group(4).strip(), float(m.group(2)), float(m.group(3))
 
-    # Scores can always be recovered from the TOTAL rows of the two player tables.
     tables = soup.select("table.table-esake")
     totals: list[float | None] = []
     for table in tables[:2]:
@@ -195,7 +195,6 @@ def _player_rows(table, team_code: str, team_name: str, opponent_code: str, oppo
             "steals": _num(cells[13]),
             "turnovers": _num(cells[14]),
             "blocks": _num(cells[9]),
-            # ESAKE FOULS F = fouls drawn/for; FOULS M = fouls made/committed.
             "fouls_committed": _num(cells[12]),
             "fouls_received": _num(cells[11]),
             "plus_minus": None,
@@ -248,7 +247,7 @@ def _team_total(table) -> dict:
 
 def parse_game(game_id: str, season_code: str = "G2026") -> tuple[dict, list[dict], list[dict]]:
     url = f"{BASE}/gr/action/EsakegameView?idgame={game_id}&mode=3"
-    html, soup = _get(url)
+    _, soup = _get(url)
     tables = soup.select("table.table-esake")
     if len(tables) < 2:
         raise ValueError(f"Expected two GBL boxscore tables for {game_id}, found {len(tables)}")
@@ -258,7 +257,6 @@ def parse_game(game_id: str, season_code: str = "G2026") -> tuple[dict, list[dic
 
     if len(teams) >= 2:
         home_code, away_code = teams[0][0], teams[1][0]
-        # Prefer names parsed from official team links when available.
         home_name = teams[0][1] or home_name
         away_name = teams[1][1] or away_name
     else:
