@@ -1,0 +1,46 @@
+name: ARIS season refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '20 4 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile ARIS pipeline
+        run: python -m compileall analytics pipeline sources scripts
+      - name: Build validated ARIS season snapshot
+        run: python -m scripts.sync_aris --season U2026 --output data/aris_2026_27.json
+      - name: Fail if no validated games were produced
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('data/aris_2026_27.json').read_text(encoding='utf-8'))
+          games = data.get('games', [])
+          assert games, 'No ARIS games were produced'
+          assert all(g.get('validation', {}).get('ok') for g in games), 'At least one game failed validation'
+          print({'games': len(games), 'errors': len(data.get('errors', []))})
+          PY
+      - name: Commit updated snapshot when data changed
+        run: |
+          if git diff --quiet -- data/aris_2026_27.json; then
+            echo 'No season data changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/aris_2026_27.json
+          git commit -m 'Refresh ARIS 2026-27 season dataset'
+          git push
