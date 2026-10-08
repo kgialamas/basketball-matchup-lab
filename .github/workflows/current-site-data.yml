@@ -2,6 +2,12 @@ name: Refresh Current Site Data
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/current-site-data.yml'
+      - 'scripts/export_site_data.py'
+      - 'sources/euroleague.py'
+      - 'scripts/sync.py'
   schedule:
     - cron: '17 5 * * *'
 
