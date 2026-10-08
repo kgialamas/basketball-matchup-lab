@@ -1,0 +1,101 @@
+name: Historical Backfill
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/historical-backfill.yml'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start from a clean database
+        run: rm -f db/basketball.db
+
+      - name: Sync historical EuroLeague and EuroCup seasons
+        run: |
+          python -m scripts.sync \
+            --season E2025 \
+            --season E2024 \
+            --season U2025 \
+            --season U2024
+
+      - name: Validate dataset
+        run: |
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+
+          db = Path('db/basketball.db')
+          conn = sqlite3.connect(db)
+          conn.row_factory = sqlite3.Row
+
+          seasons = ['E2025', 'E2024', 'U2025', 'U2024']
+          print('\nHistorical dataset summary')
+          print('=' * 72)
+          for season in seasons:
+              games = conn.execute('SELECT COUNT(*) FROM games WHERE season_code=?', (season,)).fetchone()[0]
+              teams = conn.execute('SELECT COUNT(*) FROM team_games WHERE season_code=?', (season,)).fetchone()[0]
+              players = conn.execute('SELECT COUNT(*) FROM player_games WHERE season_code=?', (season,)).fetchone()[0]
+              clubs = conn.execute('SELECT COUNT(DISTINCT team_code) FROM team_games WHERE season_code=?', (season,)).fetchone()[0]
+              first_game, last_game = conn.execute(
+                  'SELECT MIN(game_date), MAX(game_date) FROM games WHERE season_code=?', (season,)
+              ).fetchone()
+              print(f'{season}: games={games}, teams={teams}, players={players}, clubs={clubs}, range={first_game} -> {last_game}')
+              if games == 0 or teams == 0 or players == 0:
+                  raise SystemExit(f'Missing data for {season}')
+
+          print('=' * 72)
+          print('TOTAL games:', conn.execute('SELECT COUNT(*) FROM games').fetchone()[0])
+          print('TOTAL team rows:', conn.execute('SELECT COUNT(*) FROM team_games').fetchone()[0])
+          print('TOTAL player rows:', conn.execute('SELECT COUNT(*) FROM player_games').fetchone()[0])
+          conn.close()
+          PY
+
+      - name: Export season summary
+        run: |
+          python - <<'PY'
+          import sqlite3
+          import pandas as pd
+
+          conn = sqlite3.connect('db/basketball.db')
+          q = '''
+          SELECT
+            g.season_code,
+            g.competition_code,
+            COUNT(DISTINCT g.game_code) AS games,
+            COUNT(DISTINCT tg.team_code) AS teams,
+            COUNT(DISTINCT pg.player_code) AS players,
+            MIN(g.game_date) AS first_game,
+            MAX(g.game_date) AS last_game
+          FROM games g
+          LEFT JOIN team_games tg ON tg.source=g.source AND tg.season_code=g.season_code AND tg.game_code=g.game_code
+          LEFT JOIN player_games pg ON pg.source=g.source AND pg.season_code=g.season_code AND pg.game_code=g.game_code
+          GROUP BY g.season_code, g.competition_code
+          ORDER BY g.season_code DESC
+          '''
+          df = pd.read_sql_query(q, conn)
+          df.to_csv('historical-season-summary.csv', index=False)
+          print(df.to_string(index=False))
+          conn.close()
+          PY
+
+      - name: Upload historical dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: euroleague-eurocup-history-2024-26
+          path: |
+            db/basketball.db
+            historical-season-summary.csv
+          retention-days: 90
