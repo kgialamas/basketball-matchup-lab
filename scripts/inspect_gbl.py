@@ -16,6 +16,31 @@ def fetch(url: str) -> str:
     return r.text
 
 
+def dump_page(label: str, url: str) -> None:
+    print("PROBE", label, url)
+    html = fetch(url)
+    soup = BeautifulSoup(html, "html.parser")
+    print("TITLE", soup.title.get_text(" ", strip=True) if soup.title else "")
+    tables = soup.find_all("table")
+    print("TABLE_COUNT", len(tables))
+    for i, table in enumerate(tables[:20]):
+        print("TABLE_CLASS", i, table.get("class"), "ID", table.get("id"))
+        headers = [th.get_text(" ", strip=True) for th in table.find_all("th")]
+        rows = table.find_all("tr")
+        first_rows = []
+        for row in rows[:5]:
+            first_rows.append([cell.get_text(" ", strip=True) for cell in row.find_all(["th", "td"])])
+        print("TABLE", i, "HEADERS", headers)
+        print("TABLE", i, "ROWS", first_rows)
+
+    # Print compact text around likely statistical labels to expose non-table layouts.
+    for needle in ["2PM", "3PM", "FTM", "REB", "AST", "RANK", "FOULS", "MIN"]:
+        node = soup.find(string=lambda s: s and needle.lower() in s.lower())
+        if node:
+            parent = node.parent
+            print("NEEDLE", needle, "PARENT", parent.name, parent.get("class"), parent.get_text(" | ", strip=True)[:1200])
+
+
 def main() -> None:
     html = fetch(TEAM_URL)
     soup = BeautifulSoup(html, "html.parser")
@@ -35,36 +60,20 @@ def main() -> None:
         seen.add(href)
         print("GAME_LINK", repr(text), href)
 
-    # Probe the first completed-looking game link, printing table headers and nearby structure.
-    candidate = None
+    stats_url = None
+    pbp_url = None
     for text, href in links:
-        if "mode=1" in href or "mode=2" in href:
-            candidate = href
+        if stats_url is None and "mode=3" in href:
+            stats_url = href
+        if pbp_url is None and "mode=2" in href:
+            pbp_url = href
+        if stats_url and pbp_url:
             break
-    if candidate is None and links:
-        candidate = links[0][1]
 
-    if candidate:
-        print("PROBE_GAME", candidate)
-        game_html = fetch(candidate)
-        gsoup = BeautifulSoup(game_html, "html.parser")
-        print("TITLE", gsoup.title.get_text(" ", strip=True) if gsoup.title else "")
-        tables = gsoup.find_all("table")
-        print("TABLE_COUNT", len(tables))
-        for i, table in enumerate(tables[:12]):
-            headers = [th.get_text(" ", strip=True) for th in table.find_all("th")]
-            rows = table.find_all("tr")
-            first_rows = []
-            for row in rows[:3]:
-                first_rows.append([cell.get_text(" ", strip=True) for cell in row.find_all(["th", "td"])])
-            print("TABLE", i, "HEADERS", headers)
-            print("TABLE", i, "ROWS", first_rows)
-
-        for a in gsoup.find_all("a", href=True):
-            href = a["href"]
-            text = " ".join(a.stripped_strings)
-            if "EsakegameView" in href or "play" in text.lower() or "στατισ" in text.lower() or "stats" in text.lower():
-                print("GAME_NAV", repr(text), urljoin(BASE, href))
+    if stats_url:
+        dump_page("STATS", stats_url)
+    if pbp_url:
+        dump_page("PBP", pbp_url)
 
 
 if __name__ == "__main__":
