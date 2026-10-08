@@ -1,0 +1,46 @@
+name: GBL Smoke
+
+on:
+  push:
+    paths:
+      - 'sources/gbl.py'
+      - 'scripts/sync_gbl.py'
+      - '.github/workflows/gbl-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  gbl-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Sync one completed Aris GBL game
+        run: python -m scripts.sync_gbl --season G2026 --aris-only --max-games 1
+      - name: Validate normalized rows
+        run: |
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          db = Path('db/basketball.db')
+          assert db.exists()
+          with sqlite3.connect(db) as conn:
+              conn.row_factory = sqlite3.Row
+              games = conn.execute("select * from games where season_code='G2026'").fetchall()
+              teams = conn.execute("select * from team_games where season_code='G2026'").fetchall()
+              players = conn.execute("select * from player_games where season_code='G2026' order by points desc").fetchall()
+              print('GBL_GAMES', len(games))
+              for r in games:
+                  print(dict(r))
+              print('GBL_TEAM_ROWS', len(teams))
+              for r in teams:
+                  print({k:r[k] for k in ['team_code','team_name','opponent_name','points','opponent_points','rebounds','assists','fg2m','fg2a','fg3m','fg3a','ftm','fta','fouls_committed','fouls_received','possessions_est']})
+              print('GBL_PLAYER_ROWS', len(players))
+              for r in players[:12]:
+                  print({k:r[k] for k in ['player_name','team_name','minutes','points','rebounds','assists','fg2m','fg2a','fg3m','fg3a','ftm','fta','fouls_committed','fouls_received','valuation']})
+              assert len(games) == 1
+              assert len(teams) == 2
+              assert len(players) > 10
+          PY
