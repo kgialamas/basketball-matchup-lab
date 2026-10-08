@@ -57,11 +57,18 @@ def reconstruct_eurocup_stints(events, starters, *, aris_is_team_a, aris_code='A
         t=event_elapsed_seconds(ordered[i]); same=[]
         while i<len(ordered) and event_elapsed_seconds(ordered[i])==t: same.append(ordered[i]); i+=1
         grouped.append((t,same))
+    running_for=0; running_against=0
+    scoring={'FTM':1,'2FGM':2,'3FGM':3}
     def score(es):
-        vals=[e for e in es if e.get('POINTS_A') is not None or e.get('POINTS_B') is not None]
-        if not vals: return None
-        e=vals[-1]; a=int(e.get('POINTS_A') or 0); b=int(e.get('POINTS_B') or 0)
-        return (a,b) if aris_is_team_a else (b,a)
+        nonlocal running_for,running_against
+        changed=False
+        for e in es:
+            pts=scoring.get(e.get('PLAYTYPE'))
+            if not pts: continue
+            changed=True
+            if str(e.get('CODETEAM','')).strip().upper()==aris_code: running_for+=pts
+            else: running_against+=pts
+        return (running_for,running_against) if changed else None
     def subs(es):
         return [(e['PLAYTYPE'],e.get('PLAYER')) for e in es if str(e.get('CODETEAM','')).strip().upper()==aris_code and e.get('PLAYTYPE') in {'IN','OUT'}]
     end=max(2400,max((event_elapsed_seconds(e) for e in ordered),default=2400))
