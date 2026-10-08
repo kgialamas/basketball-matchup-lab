@@ -105,6 +105,57 @@ def reconstruct_eurocup_stints(
     return stints
 
 
+def reconstruct_gbl_stints(parsed: dict[str, Any]) -> list[Stint]:
+    aris_index = int(parsed["aris_index"])
+    lineup = {normalize_name(x) for x in parsed["starters"]}
+    if len(lineup) != 5:
+        raise ValueError("GBL starters did not yield exactly five players")
+
+    events = sorted(parsed["events"], key=lambda e: int(e["elapsed"]))
+    stints: list[Stint] = []
+    start = 0
+    start_aris = start_opp = 0
+    score_aris = score_opp = 0
+    i = 0
+
+    def close(at: int) -> None:
+        nonlocal start, start_aris, start_opp
+        if at > start:
+            if len(lineup) != 5:
+                raise ValueError(f"GBL invalid lineup size {len(lineup)} at {start}-{at}: {sorted(lineup)}")
+            stints.append(Stint(start, at, at - start, sorted(lineup), score_aris - start_aris, score_opp - start_opp))
+            start = at
+            start_aris = score_aris
+            start_opp = score_opp
+
+    while i < len(events):
+        t = int(events[i]["elapsed"])
+        same_time = []
+        while i < len(events) and int(events[i]["elapsed"]) == t:
+            same_time.append(events[i])
+            i += 1
+
+        for e in same_time:
+            if e.get("score_a") is not None and e.get("score_b") is not None:
+                a, b = int(e["score_a"]), int(e["score_b"])
+                score_aris, score_opp = (a, b) if aris_index == 0 else (b, a)
+
+        subs = [e for e in same_time if e.get("team_index") == aris_index and e.get("action") in {"IN", "OUT"}]
+        if subs:
+            close(t)
+            for e in subs:
+                if e.get("action") == "OUT":
+                    lineup.discard(normalize_name(e.get("player")))
+            for e in subs:
+                if e.get("action") == "IN":
+                    lineup.add(normalize_name(e.get("player")))
+            if len(lineup) != 5:
+                raise ValueError(f"GBL substitution group at {t}s produced {len(lineup)} players: {sorted(lineup)}")
+
+    close(2400)
+    return stints
+
+
 def validate_stints(stints: list[Stint], expected_margin: int | None = None) -> dict[str, Any]:
     total_seconds = sum(s.duration_seconds for s in stints)
     all_five = all(len(s.lineup) == 5 and len(set(s.lineup)) == 5 for s in stints)
